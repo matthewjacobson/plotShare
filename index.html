@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <title>saxi</title>
+    <link href="https://fonts.googleapis.com/css?family=Work+Sans:400,700,900" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js"></script>
+  </head>
+
+  <body>
+
+    <div id="menu">
+      <p>Your ID:</p>
+      <p id="uuid"></p>
+      <input type="text" placeholder="Peer id" />
+      <button onclick="connect()">Connect</button>
+    </div>
+
+    <div id="live" style="display:none">
+      <form>
+        <input id="file-selector" type="file" />
+      </form>
+    </div>
+
+    <div id='app' style="display:none"></div>
+
+    <script type="text/javascript" src="main.js"></script>
+    <script>
+      const peer = new Peer({host: "plottables-peerjs-server.herokuapp.com", secure: true});
+
+      peer.on("open", function (id) {
+        document.getElementById("uuid").textContent = id;
+      });
+
+      // var currentCall;
+      var connection;
+
+      function showMenu() {
+        document.getElementById("menu").style.display = "block";
+        document.getElementById("live").style.display = "none";
+        document.getElementById("app").style.display = "none";
+      }
+
+      function showLive() {
+        document.getElementById("menu").style.display = "none";
+        document.getElementById("live").style.display = "block";
+        document.getElementById("app").style.display = "none";
+      }
+
+      function showSaxi() {
+        document.getElementById("menu").style.display = "none";
+        document.getElementById("live").style.display = "none";
+        document.getElementById("app").style.display = "block";
+      }
+
+      function setupConnection(conn) {
+        document.getElementById("file-selector").onchange = function(event) {
+          const file = event.target.files[0]
+          const blob = new Blob(event.target.files, { type: file.type })
+          conn.send({ file: blob, filename: file.name, filetype: file.type })
+        }
+
+        conn.on("data", function(data) {
+          if (data.filetype.includes("svg")) {
+            showSaxi();
+            const bytes = new Uint8Array(data.file);
+            const uri = 'data:image/svg+xml;base64,' + encode(bytes);
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', uri);
+            xhr.addEventListener('load', function(ev)
+            {
+                var xml = ev.target.response;
+                var dom = new DOMParser();
+                var svg = dom.parseFromString(xml, 'image/svg+xml');
+                document.body.appendChild(svg.rootElement);
+            });
+            xhr.send(null);
+          }
+        });
+      }
+
+      async function connect() {
+
+        showLive();
+
+        // get the id entered by the user
+        const peerId = document.querySelector("input").value;
+
+        // make the connection
+        const conn = peer.connect(peerId);
+
+        conn.on("open", function() {
+          setupConnection(conn);
+        });
+
+        connection = conn;
+
+      }
+
+      peer.on("connection", (conn) => {
+        if (confirm(`Accept connection from ${conn.peer}?`)) {
+          showLive();
+          conn.on("open", function() {
+            setupConnection(conn);
+          });
+        } else {
+          conn.close();
+        }
+      });
+
+      const encode = input => {
+        const keyStr =
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
+        let output = ''
+        let chr1, chr2, chr3, enc1, enc2, enc3, enc4
+        let i = 0
+
+        while (i < input.length) {
+          chr1 = input[i++]
+          chr2 = i < input.length ? input[i++] : Number.NaN // Not sure if the index
+          chr3 = i < input.length ? input[i++] : Number.NaN // checks are needed here
+
+          enc1 = chr1 >> 2
+          enc2 = ((chr1 & 3) << 4) | (chr2 >> 4)
+          enc3 = ((chr2 & 15) << 2) | (chr3 >> 6)
+          enc4 = chr3 & 63
+
+          if (isNaN(chr2)) {
+            enc3 = enc4 = 64
+          } else if (isNaN(chr3)) {
+            enc4 = 64
+          }
+          output +=
+            keyStr.charAt(enc1) +
+            keyStr.charAt(enc2) +
+            keyStr.charAt(enc3) +
+            keyStr.charAt(enc4)
+        }
+        return output
+      }
+    </script>
+
+    <script>
+      const observer = new MutationObserver((mutationList, observer) => {
+        mutationList.forEach((mutation) => {
+          mutation.addedNodes.forEach(addedNode => {
+            if (addedNode.tagName === "svg") {
+              addedNode.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+              let svgData = addedNode.outerHTML;
+              let preface = '<?xml version="1.0" standalone="no"?>\r\n';
+              let svgBlob = new Blob([preface, svgData], {type:"image/svg+xml;charset=utf-8"});
+              const event = new DragEvent('drop', { preventDefault: function () {} });
+              Object.defineProperty(event.constructor.prototype, 'dataTransfer', { value: { items: [ {getAsFile: function () { return svgBlob; } } ] } });
+              document.body.dispatchEvent(event);
+              addedNode.remove();
+            }
+          });
+        });
+      });
+      observer.observe(document.body, {childList: true, attributes: false, subtree: false});
+    </script>
+  </body>
+
+</html>
